@@ -57,11 +57,13 @@ Analyzed News Clusters (Most significant first):
 # How many hours back to look for articles when generating a brief
 BRIEFING_ARTICLE_LOOKBACK_HOURS = 24
 
+
 # --- Model Settings ---
-# Model for summarization and analysis (check Deepseek docs for latest models)
-DEEPSEEK_CHAT_MODEL = "deepseek-chat"
-# Model for embeddings
-EMBEDDING_MODEL = "intfloat/multilingual-e5-large-instruct"
+# Modelo para chat (Gemini 1.5 Flash é rápido e barato, ou 1.5 Pro para mais inteligência)
+GEMINI_CHAT_MODEL = "gemini-1.5-flash"
+# Modelo para embeddings do Google
+EMBEDDING_MODEL = "models/text-embedding-004"
+
 
 # Approximate number of clusters to aim for. Fine-tune based on results.
 # Alternatively, use algorithms like DBSCAN that don't require specifying k.
@@ -82,8 +84,12 @@ DATABASE_FILE = "meridian.db"  # Keep for backward compatibility
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATABASE_FILE}")
 
 # API Keys
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY")
+
+# ========== GOOGLE ===========
+# A API do Google usa a mesma chave para Chat e Embeddings
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+# ========== GOOGLE ===========
+
 
 # Flask configuration
 FLASK_SECRET_KEY = os.getenv(

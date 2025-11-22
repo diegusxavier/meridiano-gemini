@@ -19,8 +19,10 @@ RSS_FEEDS = [
   "https://theintercept.com/feed/",
 ]
 
+pt_br = " Reply in brazilian portuguese."
+
 # Used in process_articles (operates globally, so uses default)
-PROMPT_ARTICLE_SUMMARY = "Summarize the key points of this news article objectively in 2-4 sentences. Identify the main topics covered.\n\nArticle:\n{article_content}"
+PROMPT_ARTICLE_SUMMARY = "Summarize the key points of this news article objectively in 2-4 sentences. Identify the main topics covered.\n\nArticle:\n{article_content}" + pt_br
 
 # Used in rate_articles (operates globally, so uses default)
 PROMPT_IMPACT_RATING = """Analyze the following article summary and estimate its overall impact. Consider factors like newsworthiness, originality, geographic scope (local vs global), number of people affected, severity, and potential long-term consequences. Be extremely critical and conservative when assigning scores—higher scores should reflect truly exceptional or rare events.

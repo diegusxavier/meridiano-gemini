@@ -10,7 +10,8 @@ import re
 import numpy as np
 from sklearn.cluster import KMeans
 from dotenv import load_dotenv
-import openai
+# import genai
+from google import genai
 import argparse
 
 from urllib.parse import urljoin
@@ -29,64 +30,58 @@ from sqlmodel import select
 
 # --- Setup ---
 load_dotenv()
-API_KEY = os.getenv("DEEPSEEK_API_KEY")
-EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY")
 
-if not API_KEY:
-    raise ValueError("DEEPSEEK_API_KEY not found in .env file")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-if not EMBEDDING_API_KEY:
-    raise ValueError("EMBEDDING_API_KEY not found in .env file")
+if not GOOGLE_API_KEY:
+    raise ValueError("GOOGLE_API_KEY not found in .env file")
 
-# Use the correct client for Deepseek, not OpenAI
-client = openai.Client(api_key=API_KEY, base_url="https://api.deepseek.com/v1")
-embedding_client = openai.Client(api_key=EMBEDDING_API_KEY, base_url="https://api.together.xyz/v1")
+# Configura a biblioteca do Google
+genai.configure(api_key=GOOGLE_API_KEY)
 
-def call_deepseek_chat(prompt, model=config.DEEPSEEK_CHAT_MODEL, system_prompt=None):
-    """Calls the Deepseek Chat API."""
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": prompt})
 
+# Substitua a função inteira 'call_gemini_chat' por esta:
+def call_gemini_chat(prompt, model_name=config.GEMINI_CHAT_MODEL, system_prompt=None):
+    """Calls the Google Gemini API."""
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            max_tokens=2048, # Adjust as needed
-            temperature=0.7, # Adjust for desired creativity/factuality
-        )
-        return response.choices[0].message.content.strip()
+        # No Gemini, instruções de sistema podem ser passadas na inicialização
+        if system_prompt:
+            model = genai.GenerativeModel(
+                model_name=model_name,
+                system_instruction=system_prompt
+            )
+        else:
+            model = genai.GenerativeModel(model_name)
+
+        response = model.generate_content(prompt)
+        return response.text.strip()
     except Exception as e:
-        print(f"Error calling Deepseek Chat API: {e}")
-        # Implement retry logic or better error handling here if needed
-        time.sleep(1) # Basic backoff
+        print(f"Error calling Google Gemini API: {e}")
+        time.sleep(1)
         return None
 
-def get_deepseek_embedding(text, model=config.EMBEDDING_MODEL):
-    """Gets embeddings."""
+# Substitua a função inteira 'get_deepseek_embedding' por esta:
+def get_google_embedding(text, model=config.EMBEDDING_MODEL):
+    """Gets embeddings using Google API."""
     print(f"INFO: Attempting to get embedding for text snippet: '{text[:50]}...'")
 
     try:
-         response = embedding_client.embeddings.create(
-             model=model, # Use the actual model name from Deepseek docs
-             input=[text] # API likely expects a list of strings
-         )
-         # Access the embedding vector based on the actual API response structure
-         if response.data and len(response.data) > 0:
-              embedding = response.data[0].embedding
-              # Validate embedding is not empty and has valid structure
-              if embedding and len(embedding) > 0:
-                  return embedding
-              else:
-                  print(f"Warning: Empty or invalid embedding returned for text.")
-                  return None
-         else:
-              print(f"Warning: No embedding data in API response.")
-              return None
+        # A API do Google tem um limite de bytes, truncar se necessário é uma boa prática
+        # mas para resumos curtos geralmente não é problema.
+        result = genai.embed_content(
+            model=model,
+            content=text,
+            task_type="clustering", # Otimiza o vetor para agrupamento
+        )
+        
+        if 'embedding' in result:
+            return result['embedding']
+        else:
+            print(f"Warning: No embedding data in API response.")
+            return None
     except Exception as e:
-         print(f"Error calling Embedding API: {e}")
-         return None
+        print(f"Error calling Google Embedding API: {e}")
+        return None
 
 # --- Core Functions ---
 
@@ -131,13 +126,13 @@ def scrape_articles(feed_profile, rss_feeds): # Added params
                         break # Take the first image enclosure
             # Check media_content if no enclosure image found
             if not rss_image_url and 'media_content' in entry:
-                 for media in entry.media_content:
-                     if media.get('medium') == 'image' and media.get('url'):
-                          rss_image_url = media.get('url')
-                          break # Take the first media image
-                     elif media.get('type', '').startswith('image/') and media.get('url'):
-                          rss_image_url = media.get('url')
-                          break
+                for media in entry.media_content:
+                    if media.get('medium') == 'image' and media.get('url'):
+                        rss_image_url = media.get('url')
+                        break # Take the first media image
+                    elif media.get('type', '').startswith('image/') and media.get('url'):
+                        rss_image_url = media.get('url')
+                        break
             # Check simple image tag (less common)
             if not rss_image_url and 'image' in entry and isinstance(entry.image, dict) and entry.image.get('url'):
                 rss_image_url = entry.image.get('url')
@@ -160,9 +155,9 @@ def scrape_articles(feed_profile, rss_feeds): # Added params
             # --- 3. Determine Final Image URL and Save ---
             final_image_url = rss_image_url if rss_image_url else og_image_url
             if final_image_url:
-                 print(f"  Using image URL: {final_image_url[:60]}...")
+                print(f"  Using image URL: {final_image_url[:60]}...")
             else:
-                 print("  No image found in RSS or OG tags.")
+                print("  No image found in RSS or OG tags.")
 
             article_id = database.add_article(
                 url, title, published_date, feed_source, raw_content,
@@ -178,7 +173,7 @@ def scrape_articles(feed_profile, rss_feeds): # Added params
 def process_articles(feed_profile, effective_config):
     """Processes unprocessed articles: summarizes and generates embeddings."""
     print("\n--- Starting Article Processing ---")
-    chat_model = getattr(effective_config, 'DEEPSEEK_CHAT_MODEL', 'deepseek-chat') # Get model from effective config
+    chat_model = getattr(effective_config, 'GEMINI_CHAT_MODEL', config.GEMINI_CHAT_MODEL)
     summary_prompt_template = getattr(effective_config, 'PROMPT_ARTICLE_SUMMARY', config.PROMPT_ARTICLE_SUMMARY)
 
     unprocessed = database.get_unprocessed_articles(feed_profile, 1000)
@@ -196,7 +191,7 @@ def process_articles(feed_profile, effective_config):
         summary_prompt = summary_prompt_template.format(
             article_content=article['raw_content'][:4000] # Limit context
         )
-        summary = call_deepseek_chat(summary_prompt, model=chat_model)
+        summary = call_gemini_chat(summary_prompt, model=chat_model)
 
         if not summary:
             print(f"Skipping article {article['id']} due to summarization error.")
@@ -206,11 +201,11 @@ def process_articles(feed_profile, effective_config):
 
         # 2. Generate Embedding using Deepseek (or alternative)
         # Use summary for embedding to focus on core topics and save tokens/time
-        embedding = get_deepseek_embedding(summary)
+        embedding = get_google_embedding(summary)
 
         if not embedding:
-             print(f"Skipping article {article['id']} due to embedding error.")
-             continue # Or store article without embedding if desired
+            print(f"Skipping article {article['id']} due to embedding error.")
+            continue # Or store article without embedding if desired
 
         # 3. Update Database
         database.update_article_processing(article['id'], summary, embedding)
@@ -223,11 +218,11 @@ def process_articles(feed_profile, effective_config):
 def rate_articles(feed_profile, effective_config):
     """Rates the impact of processed articles using an LLM."""
     print("\n--- Starting Article Impact Rating ---")
-    if not client:
-        print("Skipping rating: Deepseek client not initialized.")
-        return
+    
+    # A verificação 'if not client' foi removida pois o genai já está configurado globalmente.
 
-    chat_model = getattr(effective_config, 'DEEPSEEK_CHAT_MODEL', 'deepseek-chat')
+    # Atualize também para pegar o modelo correto do Gemini definido no config
+    chat_model = getattr(effective_config, 'GEMINI_CHAT_MODEL', config.GEMINI_CHAT_MODEL)
     rating_prompt_template = getattr(effective_config, 'PROMPT_IMPACT_RATING', config.PROMPT_IMPACT_RATING)
 
     unrated = database.get_unrated_articles(feed_profile, 1000)
@@ -248,7 +243,9 @@ def rate_articles(feed_profile, effective_config):
         rating_prompt = rating_prompt_template.format(
             summary=summary
         )
-        rating_response = call_deepseek_chat(rating_prompt, model=chat_model)
+        
+        # MUDANÇA AQUI: Use a nova função call_gemini_chat
+        rating_response = call_gemini_chat(rating_prompt, model_name=chat_model)
 
         impact_score = None
         if rating_response:
@@ -273,10 +270,10 @@ def rate_articles(feed_profile, effective_config):
         # Update database even if rating failed (impact_score will be None, prevents re-attempting failed ones immediately)
         # Or only update if impact_score is not None:
         if impact_score is not None:
-             database.update_article_rating(article['id'], impact_score)
-             rated_count += 1
+            database.update_article_rating(article['id'], impact_score)
+            rated_count += 1
         # else: # Decide if you want to mark failed attempts differently
-             # database.update_article_rating(article['id'], -1) # Example: Mark as failed with -1? Or leave NULL? Leaving NULL for now.
+            # database.update_article_rating(article['id'], -1) # Example: Mark as failed with -1? Or leave NULL? Leaving NULL for now.
 
         time.sleep(1) # API rate limiting
 
@@ -313,8 +310,8 @@ def generate_brief(feed_profile, effective_config): # Added feed_profile param
         # embeddings are already filtered
 
     if len(embeddings) < config.MIN_ARTICLES_FOR_BRIEFING:
-         print(f"Not enough articles ({len(embeddings)}) with embeddings to cluster. Min required: {config.MIN_ARTICLES_FOR_BRIEFING}.")
-         return
+        print(f"Not enough articles ({len(embeddings)}) with embeddings to cluster. Min required: {config.MIN_ARTICLES_FOR_BRIEFING}.")
+        return
 
     embedding_matrix = np.array(embeddings)
 
@@ -364,12 +361,12 @@ def generate_brief(feed_profile, effective_config): # Added feed_profile param
         )
 
         # *** Call LLM with the formatted prompt ***
-        cluster_analysis = call_deepseek_chat(analysis_prompt) # System prompt could also be configurable
+        cluster_analysis = call_gemini_chat(analysis_prompt) # System prompt could also be configurable
 
         if cluster_analysis:
             # (Consider adding more robust filtering of non-analysis responses)
             if "unrelated" not in cluster_analysis.lower() or len(cluster_summaries) > 2:
-                 cluster_analyses.append({"topic": f"Cluster {i+1}", "analysis": cluster_analysis, "size": len(cluster_summaries)})
+                cluster_analyses.append({"topic": f"Cluster {i+1}", "analysis": cluster_analysis, "size": len(cluster_summaries)})
         time.sleep(1) # Rate limiting
     # --- End Analyze each cluster ---
 
@@ -392,7 +389,7 @@ def generate_brief(feed_profile, effective_config): # Added feed_profile param
         cluster_analyses_text=cluster_analyses_text,
         feed_profile=feed_profile
     )
-    final_brief_md = call_deepseek_chat(synthesis_prompt)
+    final_brief_md = call_gemini_chat(synthesis_prompt)
 
     if final_brief_md:
         database.save_brief(final_brief_md, article_ids, feed_profile)
@@ -455,7 +452,7 @@ if __name__ == "__main__":
         # For now, we just need RSS_FEEDS from it
         rss_feeds = getattr(feed_config, 'RSS_FEEDS', [])
         if not rss_feeds:
-             print(f"Warning: RSS_FEEDS list not found or empty in {feed_module_name}.py")
+            print(f"Warning: RSS_FEEDS list not found or empty in {feed_module_name}.py")
     except ImportError:
         print(f"ERROR: Could not import feed configuration '{feed_module_name}.py'.")
         print(f"Please ensure the file exists and contains an RSS_FEEDS list.")
@@ -503,8 +500,8 @@ if __name__ == "__main__":
     else:
         if args.scrape:
             if current_rss_feeds:
-                 print(f"\n>>> Running ONLY Scrape Articles stage [{feed_profile_name}] <<<")
-                 scrape_articles(feed_profile_name, current_rss_feeds)
+                print(f"\n>>> Running ONLY Scrape Articles stage [{feed_profile_name}] <<<")
+                scrape_articles(feed_profile_name, current_rss_feeds)
             else: print(f"Cannot run scrape stage: No RSS_FEEDS found for profile '{feed_profile_name}'.")
         if args.process:
             print("\n>>> Running ONLY Process Articles stage <<<")
