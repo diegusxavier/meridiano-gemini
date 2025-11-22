@@ -59,8 +59,7 @@ BRIEFING_ARTICLE_LOOKBACK_HOURS = 24
 
 
 # --- Model Settings ---
-# Modelo para chat (Gemini 1.5 Flash é rápido e barato, ou 1.5 Pro para mais inteligência)
-GEMINI_CHAT_MODEL = "gemini-1.5-flash"
+GEMINI_CHAT_MODEL = "gemini-2.5-flash"
 # Modelo para embeddings do Google
 EMBEDDING_MODEL = "models/text-embedding-004"
 
