@@ -1,3 +1,4 @@
+## This fork changed the language model to Gemini for reasons of ease in the study
 # Meridiano: Your Personal Intelligence Briefing System
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](#) <!-- Replace with actual build status badge if you set up CI -->
