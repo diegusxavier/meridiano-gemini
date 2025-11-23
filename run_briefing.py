@@ -10,8 +10,8 @@ import re
 import numpy as np
 from sklearn.cluster import KMeans
 from dotenv import load_dotenv
-# import genai
 from google import genai
+from google.genai import types
 import argparse
 
 from urllib.parse import urljoin
@@ -37,45 +37,51 @@ if not GOOGLE_API_KEY:
     raise ValueError("GOOGLE_API_KEY not found in .env file")
 
 # Configura a biblioteca do Google
-genai.configure(api_key=GOOGLE_API_KEY)
-
+client = genai.Client(api_key=GOOGLE_API_KEY)
 
 # Substitua a função inteira 'call_gemini_chat' por esta:
 def call_gemini_chat(prompt, model_name=config.GEMINI_CHAT_MODEL, system_prompt=None):
-    """Calls the Google Gemini API."""
+    """Calls the Google Gemini API using the new google-genai SDK."""
     try:
-        # No Gemini, instruções de sistema podem ser passadas na inicialização
+        # Configuração para instrução de sistema, se houver
+        generate_config = None
         if system_prompt:
-            model = genai.GenerativeModel(
-                model_name=model_name,
+            generate_config = types.GenerateContentConfig(
                 system_instruction=system_prompt
             )
-        else:
-            model = genai.GenerativeModel(model_name)
 
-        response = model.generate_content(prompt)
+        # Chamada atualizada usando o cliente
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=generate_config
+        )
+        
         return response.text.strip()
     except Exception as e:
         print(f"Error calling Google Gemini API: {e}")
         time.sleep(1)
         return None
 
-# Substitua a função inteira 'get_deepseek_embedding' por esta:
+# Substitua a função inteira 'get_google_embedding' por esta:
 def get_google_embedding(text, model=config.EMBEDDING_MODEL):
-    """Gets embeddings using Google API."""
+    """Gets embeddings using Google API (new SDK)."""
     print(f"INFO: Attempting to get embedding for text snippet: '{text[:50]}...'")
 
     try:
-        # A API do Google tem um limite de bytes, truncar se necessário é uma boa prática
-        # mas para resumos curtos geralmente não é problema.
-        result = genai.embed_content(
+        # Chamada atualizada usando o cliente
+        result = client.models.embed_content(
             model=model,
-            content=text,
-            task_type="clustering", # Otimiza o vetor para agrupamento
+            contents=text,
+            config=types.EmbedContentConfig(
+                task_type="CLUSTERING" # Otimiza o vetor para agrupamento
+            )
         )
         
-        if 'embedding' in result:
-            return result['embedding']
+        # A estrutura de resposta mudou no novo SDK
+        if result.embeddings:
+            # Retorna a lista de floats do primeiro (e único) embedding
+            return result.embeddings[0].values
         else:
             print(f"Warning: No embedding data in API response.")
             return None
@@ -191,7 +197,7 @@ def process_articles(feed_profile, effective_config):
         summary_prompt = summary_prompt_template.format(
             article_content=article['raw_content'][:4000] # Limit context
         )
-        summary = call_gemini_chat(summary_prompt, model=chat_model)
+        summary = call_gemini_chat(summary_prompt, model_name=chat_model)
 
         if not summary:
             print(f"Skipping article {article['id']} due to summarization error.")
@@ -219,8 +225,9 @@ def rate_articles(feed_profile, effective_config):
     """Rates the impact of processed articles using an LLM."""
     print("\n--- Starting Article Impact Rating ---")
     
-    # A verificação 'if not client' foi removida pois o genai já está configurado globalmente.
-
+    # if not client:  # <--- ESTA LINHA VAI QUEBRAR O CÓDIGO
+    #         print("Skipping rating: Deepseek client not initialized.")
+    #         return
     # Atualize também para pegar o modelo correto do Gemini definido no config
     chat_model = getattr(effective_config, 'GEMINI_CHAT_MODEL', config.GEMINI_CHAT_MODEL)
     rating_prompt_template = getattr(effective_config, 'PROMPT_IMPACT_RATING', config.PROMPT_IMPACT_RATING)
